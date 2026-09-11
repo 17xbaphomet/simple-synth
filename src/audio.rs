@@ -2,7 +2,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use cpal::{FromSample, SizedSample};
+use cpal::{FromSample, Sample, SizedSample};
 
 use crate::engine::Engine;
 use crate::error::SynthError;
@@ -43,7 +43,7 @@ fn build_stream<T>(
     engine: Arc<Mutex<Engine>>,
 ) -> Result<cpal::Stream, SynthError>
 where
-    T: SizedSample + FromSample<f32>,
+    T: SizedSample + Sample + FromSample<f32>,
 {
     let channels = config.channels as usize;
     let err_fn = |err: cpal::Error| match err.kind() {
@@ -63,7 +63,7 @@ where
 
 fn write_frames<T>(output: &mut [T], channels: usize, engine: &Arc<Mutex<Engine>>)
 where
-    T: FromSample<f32>,
+    T: Sample + FromSample<f32>,
 {
     for frame in output.chunks_mut(channels) {
         let sample = engine
