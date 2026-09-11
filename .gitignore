@@ -1,0 +1,6 @@
+/target
+**/*.rs.bk
+*.wav
+.idea/
+.vscode/
+*.swp
