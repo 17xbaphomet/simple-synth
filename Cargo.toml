@@ -1,0 +1,15 @@
+[package]
+name = "simple-synth"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+description = "Minimaler subtractiver Synthesizer (Oscillator + ADSR + cpal/WAV)"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/17xbaphomet/simple-synth"
+
+[dependencies]
+anyhow = "1.0.104"
+clap = { version = "4.6.6", features = ["derive"] }
+cpal = "0.18.2"
+hound = "3.5.1"
+thiserror = "2.0.20"
