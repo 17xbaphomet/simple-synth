@@ -67,7 +67,7 @@ impl NoiseMode {
         match self {
             Self::Additive => "Additiv",
             Self::Multiplicative => "×(1±val)",
-            Self::Walk => "s×prev(1±)",
+            Self::Walk => "s×(prev×(1±))",
         }
     }
 }
@@ -302,8 +302,10 @@ impl Engine {
                         self.walk_gain = 1.0;
                         0.0
                     } else {
-                        self.walk_gain = (self.walk_gain * (1.0 + n)).clamp(0.05, 8.0);
-                        dry * self.walk_gain
+                        let val_prev = self.walk_gain;
+                        let factor = val_prev * (1.0 + n);
+                        self.walk_gain = factor.clamp(0.05, 8.0);
+                        dry * factor
                     }
                 }
             };
@@ -437,7 +439,7 @@ mod tests {
         assert_eq!(NoiseMode::ALL.len(), 3);
         assert_eq!(NoiseMode::Additive.label(), "Additiv");
         assert_eq!(NoiseMode::Multiplicative.label(), "×(1±val)");
-        assert_eq!(NoiseMode::Walk.label(), "s×prev(1±)");
+        assert_eq!(NoiseMode::Walk.label(), "s×(prev×(1±))");
         assert_eq!(NoiseMode::default(), NoiseMode::Additive);
     }
 }
