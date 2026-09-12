@@ -5,14 +5,14 @@ Einfacher Synthesizer in Rust — CLI und GUI mit QWERTZ/QWERTY-Klavier.
 Signalweg:
 
 ```text
-Note → Osc A + Osc B → Mix|AM|Ring|FM|Sync → ADSR A[/B] → Gain → Noise (+|×1±|prev×) → cpal
+Note → Osc A + Osc B → Mix|AM|Ring|FM|Sync → ADSR A[/B] → Gain → Noise (+|×1±|s×prev) → cpal
                                                                               ↘ WAV
 ```
 
 - Zwei Oszillatoren: Mix, AM, Ring, FM, Hard-Sync
 - Wellenformen: `sine`, `square`, `saw`, `triangle`
 - Gemeinsame oder getrennte ADSR-Hüllkurven (Checkbox)
-- Zufallsabweichung: Additiv (`sample + n`), multiplikativ (`sample × (1 + n)`) oder Walk (`val = val_prev × (1 + n)`), `n ∈ [-val, +val]`
+- Zufallsabweichung: Additiv (`sample + n`), multiplikativ (`sample × (1 + n)`) oder Walk (`sample × (val_prev × (1 + n))`), `n ∈ [-val, +val]`
 - 8-stimmige Polyphonie
 - Realtime-Ausgabe über [cpal](https://crates.io/crates/cpal) 0.18.2
 - WAV-Export über [hound](https://crates.io/crates/hound)
@@ -57,7 +57,7 @@ Zwei Oszillatoren A/B, Interaktionsmodus und Mix/Ratio/Detune/Tiefe per Slider.
 - Slider **Zufall ±** plus Modus:
   - **Additiv**: `sample + n` mit `n ∈ [-val, +val]`
   - **×(1±val)**: `sample × (1 + n)` mit `n ∈ [-val, +val]`
-  - **prev×(1±)**: `val = val_prev × (1 + n)` (startet vom aktuellen Sample, wenn `val_prev ≈ 0`)
+  - **s×prev(1±)**: `sample × (val_prev × (1 + n))` — `val_prev` ist ein laufender Faktor (Start 1, Reset wenn keine Stimme mehr live)
   Nach Gain, vor dem Clamp auf ±1. Bei `val = 0` kein Rauschen. CLI bleibt ohne Noise.
 
 Layout-Schalter QWERTZ (Standard) / QWERTY. On-Screen-Tasten folgen der physischen Position.

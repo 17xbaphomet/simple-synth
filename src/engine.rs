@@ -56,7 +56,7 @@ pub enum NoiseMode {
     #[default]
     Additive,
     Multiplicative,
-    /// `val = val_prev * (1 + n)`, seeded from the current sample when prev ≈ 0.
+    /// `out = sample * (val_prev * (1 + n))`. `val_prev` is a running gain, starts at 1.
     Walk,
 }
 
@@ -67,7 +67,7 @@ impl NoiseMode {
         match self {
             Self::Additive => "Additiv",
             Self::Multiplicative => "×(1±val)",
-            Self::Walk => "prev×(1±)",
+            Self::Walk => "s×prev(1±)",
         }
     }
 }
@@ -116,7 +116,7 @@ pub struct Engine {
     noise_mode: NoiseMode,
     mode: OscInteract,
     rng: XorShift32,
-    prev_sample: f32,
+    walk_gain: f32,
     voices: Vec<Voice>,
 }
 
@@ -144,7 +144,7 @@ impl Engine {
             noise_mode: NoiseMode::Additive,
             mode: OscInteract::Mix,
             rng: XorShift32::new(0xA5A5_C3C3),
-            prev_sample: 0.0,
+            walk_gain: 1.0,
             voices,
         })
     }
@@ -259,7 +259,7 @@ impl Engine {
             voice.env_b.reset();
             voice.note = None;
         }
-        self.prev_sample = 0.0;
+        self.walk_gain = 1.0;
     }
 
     pub fn is_active(&self) -> bool {
@@ -299,21 +299,16 @@ impl Engine {
                 NoiseMode::Multiplicative => dry * (1.0 + n),
                 NoiseMode::Walk => {
                     if !self.is_active() {
+                        self.walk_gain = 1.0;
                         0.0
                     } else {
-                        let base = if self.prev_sample.abs() > 1e-6 {
-                            self.prev_sample
-                        } else {
-                            dry
-                        };
-                        base * (1.0 + n)
+                        self.walk_gain = (self.walk_gain * (1.0 + n)).clamp(0.05, 8.0);
+                        dry * self.walk_gain
                     }
                 }
             };
         }
-        let sample = sample.clamp(-1.0, 1.0);
-        self.prev_sample = sample;
-        sample
+        sample.clamp(-1.0, 1.0)
     }
 
     pub fn render(&mut self, frames: usize) -> Vec<f32> {
@@ -442,7 +437,7 @@ mod tests {
         assert_eq!(NoiseMode::ALL.len(), 3);
         assert_eq!(NoiseMode::Additive.label(), "Additiv");
         assert_eq!(NoiseMode::Multiplicative.label(), "×(1±val)");
-        assert_eq!(NoiseMode::Walk.label(), "prev×(1±)");
+        assert_eq!(NoiseMode::Walk.label(), "s×prev(1±)");
         assert_eq!(NoiseMode::default(), NoiseMode::Additive);
     }
 }
