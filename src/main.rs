@@ -2,6 +2,8 @@ mod audio;
 mod engine;
 mod env;
 mod error;
+mod gui;
+mod keys;
 mod note;
 mod osc;
 mod wave;
@@ -24,7 +26,7 @@ use crate::wave::Waveform;
 #[command(
     name = "simple-synth",
     version,
-    about = "Einfacher Synthesizer: Sinus/Rechteck/Säge/Dreieck + ADSR"
+    about = "Einfacher Synthesizer: Sinus/Rechteck/Saege/Dreieck + ADSR + GUI"
 )]
 struct Cli {
     #[command(subcommand)]
@@ -33,29 +35,22 @@ struct Cli {
 
 #[derive(Subcommand, Debug)]
 enum Command {
-    /// Note über die Soundkarte abspielen
     Play(ToneArgs),
-    /// Note als WAV-Datei schreiben
     Wav(WavArgs),
-    /// Kurze Demo-Melodie abspielen
     Melody(MelodyArgs),
+    Gui,
 }
 
 #[derive(clap::Args, Debug)]
 struct ToneArgs {
-    /// Frequenz in Hertz
     #[arg(long)]
     freq: Option<f32>,
-    /// Notenname, z. B. A4, C#5, Bb3
     #[arg(long, conflicts_with = "freq")]
     note: Option<String>,
-    /// Wellenform: sine | square | saw | triangle
     #[arg(long, default_value = "sine")]
     wave: String,
-    /// Tondauer in Sekunden (Gate)
     #[arg(long, default_value_t = 1.5)]
     duration: f32,
-    /// Lautstärke 0.0–1.0
     #[arg(long, default_value_t = 0.25)]
     gain: f32,
     #[arg(long, default_value_t = 0.01)]
@@ -72,14 +67,12 @@ struct ToneArgs {
 struct WavArgs {
     #[command(flatten)]
     tone: ToneArgs,
-    /// Ausgabedatei
     #[arg(long, short, default_value = "tone.wav")]
     out: String,
 }
 
 #[derive(clap::Args, Debug)]
 struct MelodyArgs {
-    /// Wellenform: sine | square | saw | triangle
     #[arg(long, default_value = "square")]
     wave: String,
     #[arg(long, default_value_t = 0.20)]
@@ -91,6 +84,7 @@ fn main() -> Result<()> {
         Command::Play(args) => play(args),
         Command::Wav(args) => export_wav(args),
         Command::Melody(args) => play_melody(args),
+        Command::Gui => gui::run().context("GUI fehlgeschlagen"),
     }
 }
 
@@ -131,26 +125,20 @@ fn play_melody(args: MelodyArgs) -> Result<()> {
     let release = config.adsr.release_s;
     let engine = Arc::new(Mutex::new(Engine::new(config)?));
     let _output = audio::AudioOutput::start(Arc::clone(&engine))?;
-
     for note in notes {
         let freq = frequency_from_note(note)?;
         {
-            let mut synth = engine
-                .lock()
-                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            let mut synth = engine.lock().unwrap_or_else(|p| p.into_inner());
             synth.set_frequency(freq)?;
             synth.note_on();
         }
         std::thread::sleep(Duration::from_millis(280));
         {
-            let mut synth = engine
-                .lock()
-                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            let mut synth = engine.lock().unwrap_or_else(|p| p.into_inner());
             synth.note_off();
         }
         std::thread::sleep(Duration::from_secs_f32(release + 0.04));
     }
-
     Ok(())
 }
 
@@ -158,13 +146,11 @@ fn voice_config(args: &ToneArgs, sample_rate: f32) -> Result<VoiceConfig> {
     if args.duration <= 0.0 {
         bail!(SynthError::InvalidDuration(args.duration));
     }
-
     let frequency_hz = match (&args.note, args.freq) {
         (Some(note), _) => frequency_from_note(note)?,
         (None, Some(freq)) => freq,
         (None, None) => 440.0,
     };
-
     Ok(VoiceConfig {
         sample_rate,
         frequency_hz,
@@ -179,9 +165,8 @@ fn voice_config(args: &ToneArgs, sample_rate: f32) -> Result<VoiceConfig> {
     })
 }
 
-fn output_sample_rate() -> Option<f32> {
+pub(crate) fn output_sample_rate() -> Option<f32> {
     use cpal::traits::{DeviceTrait, HostTrait};
-
     cpal::default_host()
         .default_output_device()
         .and_then(|device| device.default_output_config().ok())

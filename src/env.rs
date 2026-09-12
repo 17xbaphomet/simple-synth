@@ -67,6 +67,11 @@ impl Envelope {
         };
     }
 
+    pub fn reset(&mut self) {
+        self.stage = Stage::Idle;
+        self.level = 0.0;
+    }
+
     pub fn is_active(&self) -> bool {
         self.stage != Stage::Idle
     }

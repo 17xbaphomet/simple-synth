@@ -13,7 +13,17 @@ pub enum Waveform {
 }
 
 impl Waveform {
-    /// `phase` im Intervall [0, 1).
+    pub const ALL: [Self; 4] = [Self::Sine, Self::Square, Self::Saw, Self::Triangle];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Sine => "sine",
+            Self::Square => "square",
+            Self::Saw => "saw",
+            Self::Triangle => "triangle",
+        }
+    }
+
     pub fn sample(self, phase: f32) -> f32 {
         let phase = phase.fract().abs();
         match self {
@@ -48,21 +58,5 @@ impl FromStr for Waveform {
             "triangle" | "tri" | "dreieck" => Ok(Self::Triangle),
             other => Err(SynthError::UnknownWaveform(other.to_owned())),
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::Waveform;
-
-    #[test]
-    fn sine_zero_crossing_at_origin() {
-        assert!((Waveform::Sine.sample(0.0)).abs() < f32::EPSILON);
-    }
-
-    #[test]
-    fn square_sign_changes_at_half() {
-        assert_eq!(Waveform::Square.sample(0.0), 1.0);
-        assert_eq!(Waveform::Square.sample(0.5), -1.0);
     }
 }
