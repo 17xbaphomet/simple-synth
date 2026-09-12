@@ -89,10 +89,13 @@ impl Engine {
             return Err(SynthError::InvalidFrequency(frequency_hz));
         }
         self.freq = frequency_hz;
+        let sample_rate = self.sample_rate;
+        let ratio = self.ratio;
+        let detune = self.detune_cents;
         for voice in &mut self.voices {
             if voice.note.is_none() && voice.env.is_active() {
                 voice.freq = frequency_hz;
-                self.apply_freqs(voice);
+                apply_freqs(voice, sample_rate, ratio, detune);
             }
         }
         Ok(())
@@ -207,23 +210,22 @@ impl Engine {
 
     fn start_voice(&mut self, note: Option<u8>, freq: f32) {
         let index = self.allocate(note);
+        let sample_rate = self.sample_rate;
+        let ratio = self.ratio;
+        let detune = self.detune_cents;
+        let wave_a = self.wave_a;
+        let wave_b = self.wave_b;
+        let adsr = self.adsr;
         let voice = &mut self.voices[index];
         voice.freq = freq;
-        voice.osc_a.set_waveform(self.wave_a);
-        voice.osc_b.set_waveform(self.wave_b);
+        voice.osc_a.set_waveform(wave_a);
+        voice.osc_b.set_waveform(wave_b);
         voice.osc_a.reset_phase();
         voice.osc_b.reset_phase();
-        self.apply_freqs(voice);
-        voice.env = Envelope::new(self.sample_rate, self.adsr);
+        apply_freqs(voice, sample_rate, ratio, detune);
+        voice.env = Envelope::new(sample_rate, adsr);
         voice.env.note_on();
         voice.note = note;
-    }
-
-    fn apply_freqs(&self, voice: &mut Voice) {
-        voice.osc_a.set_frequency(self.sample_rate, voice.freq);
-        voice
-            .osc_b
-            .set_frequency(self.sample_rate, freq_b_of(voice.freq, self.ratio, self.detune_cents));
     }
 
     fn allocate(&self, note: Option<u8>) -> usize {
@@ -237,6 +239,13 @@ impl Engine {
         }
         0
     }
+}
+
+fn apply_freqs(voice: &mut Voice, sample_rate: f32, ratio: f32, detune_cents: f32) {
+    voice.osc_a.set_frequency(sample_rate, voice.freq);
+    voice
+        .osc_b
+        .set_frequency(sample_rate, freq_b_of(voice.freq, ratio, detune_cents));
 }
 
 fn freq_b_of(freq_a: f32, ratio: f32, detune_cents: f32) -> f32 {
