@@ -51,6 +51,24 @@ impl Voice {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum NoiseMode {
+    #[default]
+    Additive,
+    Multiplicative,
+}
+
+impl NoiseMode {
+    pub const ALL: [Self; 2] = [Self::Additive, Self::Multiplicative];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Additive => "Additiv",
+            Self::Multiplicative => "×(1±val)",
+        }
+    }
+}
+
 #[derive(Debug)]
 struct XorShift32(u32);
 
@@ -92,6 +110,7 @@ pub struct Engine {
     detune_cents: f32,
     depth: f32,
     noise: f32,
+    noise_mode: NoiseMode,
     mode: OscInteract,
     rng: XorShift32,
     voices: Vec<Voice>,
@@ -118,6 +137,7 @@ impl Engine {
             detune_cents: 0.0,
             depth: 0.5,
             noise: 0.0,
+            noise_mode: NoiseMode::Additive,
             mode: OscInteract::Mix,
             rng: XorShift32::new(0xA5A5_C3C3),
             voices,
@@ -174,6 +194,10 @@ impl Engine {
 
     pub fn set_noise(&mut self, noise: f32) {
         self.noise = noise.clamp(0.0, 0.5);
+    }
+
+    pub fn set_noise_mode(&mut self, mode: NoiseMode) {
+        self.noise_mode = mode;
     }
 
     pub fn set_osc_mix(&mut self, mix: f32) {
@@ -262,7 +286,11 @@ impl Engine {
             .sum();
         let mut sample = mix * self.gain;
         if self.noise > 0.0 {
-            sample += self.rng.next_bipolar() * self.noise;
+            let n = self.rng.next_bipolar() * self.noise;
+            sample = match self.noise_mode {
+                NoiseMode::Additive => sample + n,
+                NoiseMode::Multiplicative => sample * (1.0 + n),
+            };
         }
         sample.clamp(-1.0, 1.0)
     }
@@ -381,5 +409,18 @@ fn tick_pair(
                 a.mul_add(1.0 - mix, b * mix) * env_a
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::NoiseMode;
+
+    #[test]
+    fn noise_mode_labels() {
+        assert_eq!(NoiseMode::ALL.len(), 2);
+        assert_eq!(NoiseMode::Additive.label(), "Additiv");
+        assert_eq!(NoiseMode::Multiplicative.label(), "×(1±val)");
+        assert_eq!(NoiseMode::default(), NoiseMode::Additive);
     }
 }

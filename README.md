@@ -5,13 +5,14 @@ Einfacher Synthesizer in Rust — CLI und GUI mit QWERTZ/QWERTY-Klavier.
 Signalweg:
 
 ```text
-Note → Osc A + Osc B → Mix|AM|Ring|FM|Sync → ADSR → Gain → cpal
-                                                              ↘ WAV
+Note → Osc A + Osc B → Mix|AM|Ring|FM|Sync → ADSR A[/B] → Gain → Noise (+|×1±) → cpal
+                                                                              ↘ WAV
 ```
 
 - Zwei Oszillatoren: Mix, AM, Ring, FM, Hard-Sync
 - Wellenformen: `sine`, `square`, `saw`, `triangle`
-- ADSR-Hüllkurve
+- Gemeinsame oder getrennte ADSR-Hüllkurven (Checkbox)
+- Zufallsabweichung: Additiv (`sample + n`) oder multiplikativ (`sample × (1 + n)`), `n ∈ [-val, +val]`
 - 8-stimmige Polyphonie
 - Realtime-Ausgabe über [cpal](https://crates.io/crates/cpal) 0.18.2
 - WAV-Export über [hound](https://crates.io/crates/hound)
@@ -19,7 +20,7 @@ Note → Osc A + Osc B → Mix|AM|Ring|FM|Sync → ADSR → Gain → cpal
 
 ## Voraussetzungen
 
-- Rust 1.85+
+- Rust 1.95+
 
 Arch Linux:
 
@@ -40,6 +41,7 @@ Lautstärke vor dem ersten Start runterdrehen.
 ```bash
 git clone https://github.com/17xbaphomet/simple-synth.git
 cd simple-synth
+git checkout feature/dual-osc
 
 cargo run --release -- gui
 cargo run --release -- play --note C4 --wave square --duration 1.2
@@ -50,6 +52,13 @@ cargo run --release -- melody --wave square
 ## GUI
 
 Zwei Oszillatoren A/B, Interaktionsmodus und Mix/Ratio/Detune/Tiefe per Slider.
+
+- Checkbox **Getrennte ADSR** (aus = eine gemeinsame Hüllkurve für A und B; an = unabhängige ADSR A und ADSR B nebeneinander).
+- Slider **Zufall ±** plus Modus:
+  - **Additiv**: `sample + n` mit `n ∈ [-val, +val]`
+  - **×(1±val)**: `sample × (1 + n)` mit `n ∈ [-val, +val]`
+  Nach Gain, vor dem Clamp auf ±1. Bei `val = 0` kein Rauschen. CLI bleibt ohne Noise.
+
 Layout-Schalter QWERTZ (Standard) / QWERTY. On-Screen-Tasten folgen der physischen Position.
 
 ### Tastatur (QWERTZ)
@@ -75,6 +84,8 @@ Mausklick auf die eingezeichneten Tasten spielt ebenfalls. Bis zu 8 Stimmen glei
 | Ring | Ringmodulation A × B |
 | FM | B moduliert die Frequenz von A |
 | Sync | Hard-Sync: B-Phase reset bei A-Wrap |
+
+Getrennte ADSR: Osc A und Osc B haben eigene Hüllkurven (vor dem Modus; bei FM moduliert B·EnvB, Carrier A·EnvA).
 
 CLI bleibt unverändert: Default ist Mix mit Mix=0 (nur Osc A).
 
@@ -103,7 +114,7 @@ src/
   osc.rs       Phasenakkumulator + OscInteract
   env.rs       ADSR
   note.rs      Notenname → Frequenz
-  engine.rs    8 Stimmen: OscA/OscB * Mode * Env * Gain
+  engine.rs    8 Stimmen: OscA/OscB * Mode * Env * Gain * Noise
   audio.rs     cpal-Realtime-Ausgabe
   wav.rs       WAV-Export
   error.rs     Domain-Fehler
