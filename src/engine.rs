@@ -56,15 +56,18 @@ pub enum NoiseMode {
     #[default]
     Additive,
     Multiplicative,
+    /// `val = val_prev * (1 + n)`, seeded from the current sample when prev ≈ 0.
+    Walk,
 }
 
 impl NoiseMode {
-    pub const ALL: [Self; 2] = [Self::Additive, Self::Multiplicative];
+    pub const ALL: [Self; 3] = [Self::Additive, Self::Multiplicative, Self::Walk];
 
     pub fn label(self) -> &'static str {
         match self {
             Self::Additive => "Additiv",
             Self::Multiplicative => "×(1±val)",
+            Self::Walk => "prev×(1±)",
         }
     }
 }
@@ -113,6 +116,7 @@ pub struct Engine {
     noise_mode: NoiseMode,
     mode: OscInteract,
     rng: XorShift32,
+    prev_sample: f32,
     voices: Vec<Voice>,
 }
 
@@ -140,6 +144,7 @@ impl Engine {
             noise_mode: NoiseMode::Additive,
             mode: OscInteract::Mix,
             rng: XorShift32::new(0xA5A5_C3C3),
+            prev_sample: 0.0,
             voices,
         })
     }
@@ -290,9 +295,19 @@ impl Engine {
             sample = match self.noise_mode {
                 NoiseMode::Additive => sample + n,
                 NoiseMode::Multiplicative => sample * (1.0 + n),
+                NoiseMode::Walk => {
+                    let base = if self.prev_sample.abs() > 1e-6 {
+                        self.prev_sample
+                    } else {
+                        sample
+                    };
+                    base * (1.0 + n)
+                }
             };
         }
-        sample.clamp(-1.0, 1.0)
+        let sample = sample.clamp(-1.0, 1.0);
+        self.prev_sample = sample;
+        sample
     }
 
     pub fn render(&mut self, frames: usize) -> Vec<f32> {
@@ -418,9 +433,10 @@ mod tests {
 
     #[test]
     fn noise_mode_labels() {
-        assert_eq!(NoiseMode::ALL.len(), 2);
+        assert_eq!(NoiseMode::ALL.len(), 3);
         assert_eq!(NoiseMode::Additive.label(), "Additiv");
         assert_eq!(NoiseMode::Multiplicative.label(), "×(1±val)");
+        assert_eq!(NoiseMode::Walk.label(), "prev×(1±)");
         assert_eq!(NoiseMode::default(), NoiseMode::Additive);
     }
 }
