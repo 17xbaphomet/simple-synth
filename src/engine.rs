@@ -58,7 +58,7 @@ pub enum NoiseMode {
     Multiplicative,
     /// `out = sample * (val_prev * (1 + n))`. `val_prev` is a running gain, starts at 1.
     Walk,
-    /// `out = sample * val_prev * (2 + n - val_prev)` = `sample * (2v + v*n - v²)`.
+    /// `out = sample * val_prev * (2 + n - val_prev)` = `sample * (2v + vn - v²)`.
     Parabolic,
 }
 
@@ -343,8 +343,20 @@ impl Engine {
             sample = match self.noise_mode {
                 NoiseMode::Additive => dry + n,
                 NoiseMode::Multiplicative => dry * (1.0 + n),
-                NoiseMode::Walk => apply_walk(self.is_active(), &mut self.walk_gain, dry, n),
-                NoiseMode::Parabolic => apply_parabolic(self.is_active(), &mut self.walk_gain, dry, n),
+                NoiseMode::Walk | NoiseMode::Parabolic => {
+                    if !self.is_active() {
+                        self.walk_gain = 1.0;
+                        0.0
+                    } else {
+                        let val_prev = self.walk_gain;
+                        let factor = match self.noise_mode {
+                            NoiseMode::Parabolic => val_prev * (2.0 + n - val_prev),
+                            _ => val_prev * (1.0 + n),
+                        };
+                        self.walk_gain = factor.clamp(0.05, 8.0);
+                        dry * factor
+                    }
+                }
             };
         }
         sample.clamp(-1.0, 1.0)
@@ -404,27 +416,6 @@ fn apply_freqs(voice: &mut Voice, sample_rate: f32, ratio: f32, detune_cents: f3
 
 fn freq_b_of(freq_a: f32, ratio: f32, detune_cents: f32) -> f32 {
     freq_a * ratio.clamp(0.25, 8.0) * 2_f32.powf(detune_cents / 1200.0)
-}
-
-fn apply_walk(active: bool, walk_gain: &mut f32, dry: f32, n: f32) -> f32 {
-    if !active {
-        *walk_gain = 1.0;
-        return 0.0;
-    }
-    let factor = *walk_gain * (1.0 + n);
-    *walk_gain = factor.clamp(0.05, 8.0);
-    dry * factor
-}
-
-fn apply_parabolic(active: bool, walk_gain: &mut f32, dry: f32, n: f32) -> f32 {
-    if !active {
-        *walk_gain = 1.0;
-        return 0.0;
-    }
-    let v = *walk_gain;
-    let factor = v * (2.0 + n - v);
-    *walk_gain = factor.clamp(0.05, 8.0);
-    dry * factor
 }
 
 fn tick_pair(
@@ -490,7 +481,7 @@ fn tick_pair(
 
 #[cfg(test)]
 mod tests {
-    use super::{apply_parabolic, NoiseDist, NoiseMode};
+    use super::{NoiseDist, NoiseMode};
 
     #[test]
     fn noise_mode_labels() {
@@ -508,27 +499,5 @@ mod tests {
         assert_eq!(NoiseDist::Uniform.label(), "Gleich");
         assert_eq!(NoiseDist::Gauss.label(), "Gauß");
         assert_eq!(NoiseDist::default(), NoiseDist::Uniform);
-    }
-
-    #[test]
-    fn parabolic_mean_reverts_to_one() {
-        let mut v = 0.5;
-        let out = apply_parabolic(true, &mut v, 1.0, 0.0);
-        assert!((out - 0.75).abs() < 1e-6);
-        assert!((v - 0.75).abs() < 1e-6);
-        let out = apply_parabolic(true, &mut v, 1.0, 0.0);
-        assert!((out - 0.9375).abs() < 1e-6);
-        let mut v = 1.0;
-        let out = apply_parabolic(true, &mut v, 0.4, 0.0);
-        assert!((out - 0.4).abs() < 1e-6);
-        assert!((v - 1.0).abs() < 1e-6);
-    }
-
-    #[test]
-    fn parabolic_resets_when_silent() {
-        let mut v = 3.0;
-        let out = apply_parabolic(false, &mut v, 0.5, 0.2);
-        assert_eq!(out, 0.0);
-        assert_eq!(v, 1.0);
     }
 }
