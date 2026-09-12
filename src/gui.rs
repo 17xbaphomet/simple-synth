@@ -45,16 +45,22 @@ pub fn run() -> Result<()> {
         detune: 7.0,
         depth: 0.6,
         gain,
+        noise: 0.0,
+        separate_adsr: false,
         attack: adsr.attack_s,
         decay: adsr.decay_s,
         sustain: adsr.sustain,
         release: adsr.release_s,
+        attack_b: adsr.attack_s,
+        decay_b: adsr.decay_s,
+        sustain_b: adsr.sustain,
+        release_b: adsr.release_s,
     };
     app.push_osc_params();
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size([860.0, 620.0])
-            .with_min_inner_size([680.0, 500.0]),
+            .with_inner_size([860.0, 720.0])
+            .with_min_inner_size([680.0, 560.0]),
         ..Default::default()
     };
     eframe::run_native("simple-synth", options, Box::new(|_cc| Ok(Box::new(app))))
@@ -77,10 +83,16 @@ struct SynthGui {
     detune: f32,
     depth: f32,
     gain: f32,
+    noise: f32,
+    separate_adsr: bool,
     attack: f32,
     decay: f32,
     sustain: f32,
     release: f32,
+    attack_b: f32,
+    decay_b: f32,
+    sustain_b: f32,
+    release_b: f32,
 }
 
 impl eframe::App for SynthGui {
@@ -150,17 +162,94 @@ impl eframe::App for SynthGui {
         if ui.add(egui::Slider::new(&mut self.gain, 0.0..=1.0).text("Gain")).changed() {
             self.engine.lock().unwrap_or_else(|p| p.into_inner()).set_gain(self.gain);
         }
-        if ui.add(egui::Slider::new(&mut self.attack, 0.0..=1.0).text("Attack")).changed() {
-            self.push_adsr();
+        if ui
+            .add(egui::Slider::new(&mut self.noise, 0.0..=0.5).text("Zufallsabweichung"))
+            .changed()
+        {
+            self.engine
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .set_noise(self.noise);
         }
-        if ui.add(egui::Slider::new(&mut self.decay, 0.0..=1.0).text("Decay")).changed() {
-            self.push_adsr();
+        if ui.checkbox(&mut self.separate_adsr, "Getrennte ADSR").changed() {
+            let mut synth = self.engine.lock().unwrap_or_else(|p| p.into_inner());
+            synth.set_separate_adsr(self.separate_adsr);
+            drop(synth);
+            if self.separate_adsr {
+                self.attack_b = self.attack;
+                self.decay_b = self.decay;
+                self.sustain_b = self.sustain;
+                self.release_b = self.release;
+            } else {
+                self.push_adsr_shared();
+            }
         }
-        if ui.add(egui::Slider::new(&mut self.sustain, 0.0..=1.0).text("Sustain")).changed() {
-            self.push_adsr();
-        }
-        if ui.add(egui::Slider::new(&mut self.release, 0.0..=2.0).text("Release")).changed() {
-            self.push_adsr();
+        if self.separate_adsr {
+            ui.columns(2, |cols| {
+                cols[0].label("ADSR A");
+                if cols[0]
+                    .add(egui::Slider::new(&mut self.attack, 0.0..=1.0).text("Attack A"))
+                    .changed()
+                {
+                    self.push_adsr_a();
+                }
+                if cols[0]
+                    .add(egui::Slider::new(&mut self.decay, 0.0..=1.0).text("Decay A"))
+                    .changed()
+                {
+                    self.push_adsr_a();
+                }
+                if cols[0]
+                    .add(egui::Slider::new(&mut self.sustain, 0.0..=1.0).text("Sustain A"))
+                    .changed()
+                {
+                    self.push_adsr_a();
+                }
+                if cols[0]
+                    .add(egui::Slider::new(&mut self.release, 0.0..=2.0).text("Release A"))
+                    .changed()
+                {
+                    self.push_adsr_a();
+                }
+                cols[1].label("ADSR B");
+                if cols[1]
+                    .add(egui::Slider::new(&mut self.attack_b, 0.0..=1.0).text("Attack B"))
+                    .changed()
+                {
+                    self.push_adsr_b();
+                }
+                if cols[1]
+                    .add(egui::Slider::new(&mut self.decay_b, 0.0..=1.0).text("Decay B"))
+                    .changed()
+                {
+                    self.push_adsr_b();
+                }
+                if cols[1]
+                    .add(egui::Slider::new(&mut self.sustain_b, 0.0..=1.0).text("Sustain B"))
+                    .changed()
+                {
+                    self.push_adsr_b();
+                }
+                if cols[1]
+                    .add(egui::Slider::new(&mut self.release_b, 0.0..=2.0).text("Release B"))
+                    .changed()
+                {
+                    self.push_adsr_b();
+                }
+            });
+        } else {
+            if ui.add(egui::Slider::new(&mut self.attack, 0.0..=1.0).text("Attack")).changed() {
+                self.push_adsr_shared();
+            }
+            if ui.add(egui::Slider::new(&mut self.decay, 0.0..=1.0).text("Decay")).changed() {
+                self.push_adsr_shared();
+            }
+            if ui.add(egui::Slider::new(&mut self.sustain, 0.0..=1.0).text("Sustain")).changed() {
+                self.push_adsr_shared();
+            }
+            if ui.add(egui::Slider::new(&mut self.release, 0.0..=2.0).text("Release")).changed() {
+                self.push_adsr_shared();
+            }
         }
         ui.add_space(8.0);
         ui.label("Obere Reihe");
@@ -183,6 +272,53 @@ impl SynthGui {
         synth.set_osc_ratio(self.ratio);
         synth.set_osc_detune(self.detune);
         synth.set_osc_depth(self.depth);
+        synth.set_noise(self.noise);
+        synth.set_separate_adsr(self.separate_adsr);
+        synth.set_adsr(self.adsr_a());
+        synth.set_adsr_b(self.adsr_b());
+    }
+
+    fn adsr_a(&self) -> AdsrParams {
+        AdsrParams {
+            attack_s: self.attack,
+            decay_s: self.decay,
+            sustain: self.sustain,
+            release_s: self.release,
+        }
+    }
+
+    fn adsr_b(&self) -> AdsrParams {
+        AdsrParams {
+            attack_s: self.attack_b,
+            decay_s: self.decay_b,
+            sustain: self.sustain_b,
+            release_s: self.release_b,
+        }
+    }
+
+    fn push_adsr_a(&mut self) {
+        self.engine
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .set_adsr(self.adsr_a());
+    }
+
+    fn push_adsr_b(&mut self) {
+        self.engine
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .set_adsr_b(self.adsr_b());
+    }
+
+    fn push_adsr_shared(&mut self) {
+        self.attack_b = self.attack;
+        self.decay_b = self.decay;
+        self.sustain_b = self.sustain;
+        self.release_b = self.release;
+        let params = self.adsr_a();
+        let mut synth = self.engine.lock().unwrap_or_else(|p| p.into_inner());
+        synth.set_adsr(params);
+        synth.set_adsr_b(params);
     }
 
     fn handle_keyboard(&mut self, ctx: &egui::Context) {
@@ -259,16 +395,6 @@ impl SynthGui {
 
     fn shift_octave(&mut self, delta: i32) {
         self.octave = (self.octave + delta).clamp(-2, 3);
-    }
-
-    fn push_adsr(&mut self) {
-        let params = AdsrParams {
-            attack_s: self.attack,
-            decay_s: self.decay,
-            sustain: self.sustain,
-            release_s: self.release,
-        };
-        self.engine.lock().unwrap_or_else(|p| p.into_inner()).set_adsr(params);
     }
 }
 
