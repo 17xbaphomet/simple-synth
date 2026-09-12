@@ -72,6 +72,24 @@ impl NoiseMode {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum NoiseDist {
+    #[default]
+    Uniform,
+    Gauss,
+}
+
+impl NoiseDist {
+    pub const ALL: [Self; 2] = [Self::Uniform, Self::Gauss];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Uniform => "Gleich",
+            Self::Gauss => "Gauß",
+        }
+    }
+}
+
 #[derive(Debug)]
 struct XorShift32(u32);
 
@@ -96,6 +114,25 @@ impl XorShift32 {
     fn next_bipolar(&mut self) -> f32 {
         self.next_unit().mul_add(2.0, -1.0)
     }
+
+    /// Marsaglia polar method → N(0, 1). Rejection loop is ~1.27 iterations on average.
+    fn next_gauss(&mut self) -> f32 {
+        loop {
+            let u = self.next_bipolar();
+            let v = self.next_bipolar();
+            let s = u * u + v * v;
+            if s > 0.0 && s < 1.0 {
+                return u * (-2.0 * s.ln() / s).sqrt();
+            }
+        }
+    }
+
+    fn next_dev(&mut self, dist: NoiseDist) -> f32 {
+        match dist {
+            NoiseDist::Uniform => self.next_bipolar(),
+            NoiseDist::Gauss => self.next_gauss(),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -114,6 +151,7 @@ pub struct Engine {
     depth: f32,
     noise: f32,
     noise_mode: NoiseMode,
+    noise_dist: NoiseDist,
     mode: OscInteract,
     rng: XorShift32,
     walk_gain: f32,
@@ -142,6 +180,7 @@ impl Engine {
             depth: 0.5,
             noise: 0.0,
             noise_mode: NoiseMode::Additive,
+            noise_dist: NoiseDist::Uniform,
             mode: OscInteract::Mix,
             rng: XorShift32::new(0xA5A5_C3C3),
             walk_gain: 1.0,
@@ -203,6 +242,10 @@ impl Engine {
 
     pub fn set_noise_mode(&mut self, mode: NoiseMode) {
         self.noise_mode = mode;
+    }
+
+    pub fn set_noise_dist(&mut self, dist: NoiseDist) {
+        self.noise_dist = dist;
     }
 
     pub fn set_osc_mix(&mut self, mix: f32) {
@@ -293,7 +336,7 @@ impl Engine {
         let dry = mix * self.gain;
         let mut sample = dry;
         if self.noise > 0.0 {
-            let n = self.rng.next_bipolar() * self.noise;
+            let n = self.rng.next_dev(self.noise_dist) * self.noise;
             sample = match self.noise_mode {
                 NoiseMode::Additive => dry + n,
                 NoiseMode::Multiplicative => dry * (1.0 + n),
@@ -432,7 +475,7 @@ fn tick_pair(
 
 #[cfg(test)]
 mod tests {
-    use super::NoiseMode;
+    use super::{NoiseDist, NoiseMode};
 
     #[test]
     fn noise_mode_labels() {
@@ -441,5 +484,13 @@ mod tests {
         assert_eq!(NoiseMode::Multiplicative.label(), "×(1±val)");
         assert_eq!(NoiseMode::Walk.label(), "s×(prev×(1±))");
         assert_eq!(NoiseMode::default(), NoiseMode::Additive);
+    }
+
+    #[test]
+    fn noise_dist_labels() {
+        assert_eq!(NoiseDist::ALL.len(), 2);
+        assert_eq!(NoiseDist::Uniform.label(), "Gleich");
+        assert_eq!(NoiseDist::Gauss.label(), "Gauß");
+        assert_eq!(NoiseDist::default(), NoiseDist::Uniform);
     }
 }
