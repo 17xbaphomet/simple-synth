@@ -259,6 +259,7 @@ impl Engine {
             voice.env_b.reset();
             voice.note = None;
         }
+        self.prev_sample = 0.0;
     }
 
     pub fn is_active(&self) -> bool {
@@ -289,19 +290,24 @@ impl Engine {
                 tick_pair(voice, sample_rate, mode, mix_ab, depth, env_a, env_b, separate)
             })
             .sum();
-        let mut sample = mix * self.gain;
+        let dry = mix * self.gain;
+        let mut sample = dry;
         if self.noise > 0.0 {
             let n = self.rng.next_bipolar() * self.noise;
             sample = match self.noise_mode {
-                NoiseMode::Additive => sample + n,
-                NoiseMode::Multiplicative => sample * (1.0 + n),
+                NoiseMode::Additive => dry + n,
+                NoiseMode::Multiplicative => dry * (1.0 + n),
                 NoiseMode::Walk => {
-                    let base = if self.prev_sample.abs() > 1e-6 {
-                        self.prev_sample
+                    if !self.is_active() {
+                        0.0
                     } else {
-                        sample
-                    };
-                    base * (1.0 + n)
+                        let base = if self.prev_sample.abs() > 1e-6 {
+                            self.prev_sample
+                        } else {
+                            dry
+                        };
+                        base * (1.0 + n)
+                    }
                 }
             };
         }
