@@ -5,7 +5,7 @@ use anyhow::{Context, Result};
 use eframe::egui::{self, Color32, Key, RichText, Sense, Vec2};
 
 use crate::audio::AudioOutput;
-use crate::engine::{Engine, NoiseMode, VoiceConfig};
+use crate::engine::{Engine, NoiseDist, NoiseMode, VoiceConfig};
 use crate::env::AdsrParams;
 use crate::keys::{self, Layout, PianoKey};
 use crate::osc::OscInteract;
@@ -57,6 +57,7 @@ pub fn run() -> Result<()> {
         release_b: adsr.release_s,
         noise: 0.0,
         noise_mode: NoiseMode::Additive,
+        noise_dist: NoiseDist::Uniform,
     };
     app.push_osc_params();
 
@@ -102,6 +103,7 @@ struct SynthGui {
     release_b: f32,
     noise: f32,
     noise_mode: NoiseMode,
+    noise_dist: NoiseDist,
 }
 
 impl eframe::App for SynthGui {
@@ -255,6 +257,21 @@ impl eframe::App for SynthGui {
                 }
             }
         });
+        ui.horizontal(|ui| {
+            ui.label("Verteilung");
+            for dist in NoiseDist::ALL {
+                if ui
+                    .selectable_label(self.noise_dist == dist, dist.label())
+                    .clicked()
+                {
+                    self.noise_dist = dist;
+                    self.engine
+                        .lock()
+                        .unwrap_or_else(|p| p.into_inner())
+                        .set_noise_dist(dist);
+                }
+            }
+        });
 
         if ui
             .checkbox(&mut self.separate_adsr, "Getrennte ADSR")
@@ -362,6 +379,7 @@ impl SynthGui {
         synth.set_separate_adsr(self.separate_adsr);
         synth.set_noise(self.noise);
         synth.set_noise_mode(self.noise_mode);
+        synth.set_noise_dist(self.noise_dist);
         synth.set_adsr(AdsrParams {
             attack_s: self.attack,
             decay_s: self.decay,
