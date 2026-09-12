@@ -28,7 +28,8 @@ impl VoiceConfig {
 struct Voice {
     osc_a: Oscillator,
     osc_b: Oscillator,
-    env: Envelope,
+    env_a: Envelope,
+    env_b: Envelope,
     note: Option<u8>,
     freq: f32,
 }
@@ -38,10 +39,25 @@ impl Voice {
         Self {
             osc_a: Oscillator::new(sample_rate, frequency_hz, waveform),
             osc_b: Oscillator::new(sample_rate, frequency_hz, waveform),
-            env: Envelope::new(sample_rate, adsr),
+            env_a: Envelope::new(sample_rate, adsr),
+            env_b: Envelope::new(sample_rate, adsr),
             note: None,
             freq: frequency_hz,
         }
+    }
+}
+
+#[derive(Debug)]
+struct XorShift32(u32);
+
+impl XorShift32 {
+    fn next_unit(&mut self) -> f32 {
+        let mut x = self.0;
+        x ^= x << 13;
+        x ^= x >> 17;
+        x ^= x << 5;
+        self.0 = x.max(1);
+        (x as f32) * (1.0 / 4_294_967_295.0)
     }
 }
 
@@ -51,6 +67,10 @@ pub struct Engine {
     wave_a: Waveform,
     wave_b: Waveform,
     adsr: AdsrParams,
+    adsr_b: AdsrParams,
+    separate_adsr: bool,
+    noise: f32,
+    rng: XorShift32,
     gain: f32,
     freq: f32,
     mix: f32,
@@ -73,6 +93,10 @@ impl Engine {
             wave_a: config.waveform,
             wave_b: config.waveform,
             adsr: config.adsr.sanitized(),
+            adsr_b: config.adsr.sanitized(),
+            separate_adsr: false,
+            noise: 0.0,
+            rng: XorShift32(0xA341_316C),
             gain: config.gain.clamp(0.0, 1.0),
             freq: config.frequency_hz,
             mix: 0.0,
@@ -92,8 +116,9 @@ impl Engine {
         let sample_rate = self.sample_rate;
         let ratio = self.ratio;
         let detune = self.detune_cents;
+        let separate = self.separate_adsr;
         for voice in &mut self.voices {
-            if voice.note.is_none() && voice.env.is_active() {
+            if voice.note.is_none() && voice_live(voice, separate) {
                 voice.freq = frequency_hz;
                 apply_freqs(voice, sample_rate, ratio, detune);
             }
@@ -123,6 +148,18 @@ impl Engine {
         self.adsr = adsr.sanitized();
     }
 
+    pub fn set_adsr_b(&mut self, adsr: AdsrParams) {
+        self.adsr_b = adsr.sanitized();
+    }
+
+    pub fn set_separate_adsr(&mut self, enabled: bool) {
+        self.separate_adsr = enabled;
+    }
+
+    pub fn set_noise(&mut self, noise: f32) {
+        self.noise = noise.clamp(0.0, 1.0);
+    }
+
     pub fn set_osc_mix(&mut self, mix: f32) {
         self.mix = mix.clamp(0.0, 1.0);
     }
@@ -148,9 +185,11 @@ impl Engine {
     }
 
     pub fn note_off(&mut self) {
+        let separate = self.separate_adsr;
         for voice in &mut self.voices {
-            if voice.note.is_none() && voice.env.is_active() {
-                voice.env.note_off();
+            if voice.note.is_none() && voice_live(voice, separate) {
+                voice.env_a.note_off();
+                voice.env_b.note_off();
             }
         }
     }
@@ -164,20 +203,23 @@ impl Engine {
     pub fn note_off_midi(&mut self, midi: u8) {
         for voice in &mut self.voices {
             if voice.note == Some(midi) {
-                voice.env.note_off();
+                voice.env_a.note_off();
+                voice.env_b.note_off();
             }
         }
     }
 
     pub fn all_notes_off(&mut self) {
         for voice in &mut self.voices {
-            voice.env.reset();
+            voice.env_a.reset();
+            voice.env_b.reset();
             voice.note = None;
         }
     }
 
     pub fn is_active(&self) -> bool {
-        self.voices.iter().any(|voice| voice.env.is_active())
+        let separate = self.separate_adsr;
+        self.voices.iter().any(|voice| voice_live(voice, separate))
     }
 
     pub fn next_sample(&mut self) -> f32 {
@@ -187,21 +229,25 @@ impl Engine {
         let sample_rate = self.sample_rate;
         let ratio = self.ratio;
         let detune = self.detune_cents;
+        let separate = self.separate_adsr;
         let mix: f32 = self
             .voices
             .iter_mut()
             .map(|voice| {
-                if !voice.env.is_active() {
+                if !voice_live(voice, separate) {
                     voice.note = None;
                     return 0.0;
                 }
                 let freq_b = freq_b_of(voice.freq, ratio, detune);
                 voice.osc_b.set_frequency(sample_rate, freq_b);
-                let pair = tick_pair(voice, sample_rate, mode, mix_ab, depth);
-                pair * voice.env.tick()
+                render_voice(voice, sample_rate, mode, mix_ab, depth, separate)
             })
             .sum();
-        (mix * self.gain).clamp(-1.0, 1.0)
+        let mut sample = mix * self.gain;
+        if self.noise > 0.0 {
+            sample += (self.rng.next_unit() * 2.0 - 1.0) * self.noise;
+        }
+        sample.clamp(-1.0, 1.0)
     }
 
     pub fn render(&mut self, frames: usize) -> Vec<f32> {
@@ -216,6 +262,7 @@ impl Engine {
         let wave_a = self.wave_a;
         let wave_b = self.wave_b;
         let adsr = self.adsr;
+        let adsr_b = self.adsr_b;
         let voice = &mut self.voices[index];
         voice.freq = freq;
         voice.osc_a.set_waveform(wave_a);
@@ -223,8 +270,10 @@ impl Engine {
         voice.osc_a.reset_phase();
         voice.osc_b.reset_phase();
         apply_freqs(voice, sample_rate, ratio, detune);
-        voice.env = Envelope::new(sample_rate, adsr);
-        voice.env.note_on();
+        voice.env_a = Envelope::new(sample_rate, adsr);
+        voice.env_b = Envelope::new(sample_rate, adsr_b);
+        voice.env_a.note_on();
+        voice.env_b.note_on();
         voice.note = note;
     }
 
@@ -234,11 +283,20 @@ impl Engine {
                 return index;
             }
         }
-        if let Some(index) = self.voices.iter().position(|voice| !voice.env.is_active()) {
+        let separate = self.separate_adsr;
+        if let Some(index) = self
+            .voices
+            .iter()
+            .position(|voice| !voice_live(voice, separate))
+        {
             return index;
         }
         0
     }
+}
+
+fn voice_live(voice: &Voice, separate: bool) -> bool {
+    voice.env_a.is_active() || (separate && voice.env_b.is_active())
 }
 
 fn apply_freqs(voice: &mut Voice, sample_rate: f32, ratio: f32, detune_cents: f32) {
@@ -252,32 +310,51 @@ fn freq_b_of(freq_a: f32, ratio: f32, detune_cents: f32) -> f32 {
     freq_a * ratio.clamp(0.25, 8.0) * 2_f32.powf(detune_cents / 1200.0)
 }
 
-fn tick_pair(voice: &mut Voice, sample_rate: f32, mode: OscInteract, mix: f32, depth: f32) -> f32 {
-    match mode {
+fn render_voice(
+    voice: &mut Voice,
+    sample_rate: f32,
+    mode: OscInteract,
+    mix: f32,
+    depth: f32,
+    separate: bool,
+) -> f32 {
+    let env_a = voice.env_a.tick();
+    let env_b = if separate {
+        voice.env_b.tick()
+    } else {
+        1.0
+    };
+    let pair = match mode {
         OscInteract::Mix => {
-            let a = voice.osc_a.tick();
-            let b = voice.osc_b.tick();
+            let a = voice.osc_a.tick() * env_a;
+            let b = voice.osc_b.tick() * env_b;
             a.mul_add(1.0 - mix, b * mix)
         }
         OscInteract::Am => {
-            let a = voice.osc_a.tick();
-            let b = voice.osc_b.tick();
+            let a = voice.osc_a.tick() * env_a;
+            let b = voice.osc_b.tick() * env_b;
             (a * (1.0 + depth * b)).clamp(-1.0, 1.0)
         }
-        OscInteract::Ring => voice.osc_a.tick() * voice.osc_b.tick(),
+        OscInteract::Ring => voice.osc_a.tick() * env_a * voice.osc_b.tick() * env_b,
         OscInteract::Fm => {
-            let b = voice.osc_b.tick();
+            let b = voice.osc_b.tick() * env_b;
             let freq = (voice.freq * (1.0 + depth * 4.0 * b)).max(0.0);
             voice.osc_a.set_frequency(sample_rate, freq);
-            voice.osc_a.tick()
+            voice.osc_a.tick() * env_a
         }
         OscInteract::Sync => {
             let (a, wrapped) = voice.osc_a.tick_wrap();
             if wrapped {
                 voice.osc_b.reset_phase();
             }
-            let b = voice.osc_b.tick();
+            let a = a * env_a;
+            let b = voice.osc_b.tick() * env_b;
             a.mul_add(1.0 - mix, b * mix)
         }
+    };
+    if separate {
+        pair
+    } else {
+        pair * env_a
     }
 }
