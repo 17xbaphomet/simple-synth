@@ -359,10 +359,10 @@ impl Plugin for Zweiton {
                         self.engine.note_off_midi(key.number_or_middle_c());
                     }
                     NoteEvent::Choke { key, .. } => {
-                        if let Some(key) = key {
-                            self.engine.note_off_midi(key.number_or_middle_c());
-                        } else {
+                        if key.is_wildcard() {
                             self.engine.all_notes_off();
+                        } else {
+                            self.engine.note_off_midi(key.number_or_middle_c());
                         }
                     }
                     _ => {}
