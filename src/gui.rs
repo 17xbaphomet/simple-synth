@@ -5,11 +5,10 @@ use anyhow::{Context, Result};
 use eframe::egui::{self, Color32, Key, RichText, Sense, Vec2};
 
 use crate::audio::AudioOutput;
-use crate::engine::{Engine, NoiseDist, NoiseMode, VoiceConfig};
-use crate::env::AdsrParams;
 use crate::keys::{self, Layout, PianoKey};
-use crate::osc::OscInteract;
-use crate::wave::Waveform;
+use zweiton_engine::{
+    AdsrParams, Engine, NoiseDist, NoiseMode, OscInteract, VoiceConfig, Waveform,
+};
 
 pub fn run() -> Result<()> {
     let sample_rate = crate::output_sample_rate().unwrap_or(48_000.0);
@@ -63,13 +62,13 @@ pub fn run() -> Result<()> {
 
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size([900.0, 760.0])
-            .with_min_inner_size([720.0, 600.0]),
+            .with_inner_size([980.0, 760.0])
+            .with_min_inner_size([780.0, 600.0]),
         ..Default::default()
     };
 
     eframe::run_native(
-        "simple-synth",
+        "Zweiton",
         options,
         Box::new(|_cc| Ok(Box::new(app))),
     )
@@ -114,7 +113,7 @@ impl eframe::App for SynthGui {
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
-        ui.heading("simple-synth");
+        ui.heading("Zweiton");
         ui.label("Zwei Oszillatoren — Mix, AM, Ring, FM, Hard-Sync.");
         ui.label("Tastatur: untere Reihe C4, obere Reihe C5. F1–F4 Welle A, Esc = aus.");
         ui.add_space(8.0);

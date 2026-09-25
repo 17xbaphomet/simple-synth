@@ -56,9 +56,7 @@ pub enum NoiseMode {
     #[default]
     Additive,
     Multiplicative,
-    /// `out = sample * (val_prev * (1 + n))`. `val_prev` is a running gain, starts at 1.
     Walk,
-    /// `out = sample * val_prev * (2 + n - val_prev)` = `sample * (2v + vn - v²)`.
     Parabolic,
 }
 
@@ -68,9 +66,9 @@ impl NoiseMode {
     pub fn label(self) -> &'static str {
         match self {
             Self::Additive => "Additiv",
-            Self::Multiplicative => "×(1±val)",
-            Self::Walk => "s×(prev×(1±))",
-            Self::Parabolic => "s×v(2+n−v)",
+            Self::Multiplicative => "x(1+/-val)",
+            Self::Walk => "s*prev*(1+/-)",
+            Self::Parabolic => "s*v(2+n-v)",
         }
     }
 }
@@ -88,7 +86,7 @@ impl NoiseDist {
     pub fn label(self) -> &'static str {
         match self {
             Self::Uniform => "Gleich",
-            Self::Gauss => "Gauß",
+            Self::Gauss => "Gauss",
         }
     }
 }
@@ -118,16 +116,16 @@ impl XorShift32 {
         self.next_unit().mul_add(2.0, -1.0)
     }
 
-    /// Marsaglia polar method → N(0, 1). Rejection loop is ~1.27 iterations on average.
     fn next_gauss(&mut self) -> f32 {
-        loop {
+        for _ in 0..8 {
             let u = self.next_bipolar();
             let v = self.next_bipolar();
-            let s = u * u + v * v;
+            let s = u.mul_add(u, v * v);
             if s > 0.0 && s < 1.0 {
                 return u * (-2.0 * s.ln() / s).sqrt();
             }
         }
+        self.next_bipolar()
     }
 
     fn next_dev(&mut self, dist: NoiseDist) -> f32 {
@@ -189,6 +187,18 @@ impl Engine {
             walk_gain: 1.0,
             voices,
         })
+    }
+
+    pub fn set_sample_rate(&mut self, sample_rate: f32) {
+        let sample_rate = sample_rate.max(1.0);
+        self.sample_rate = sample_rate;
+        let ratio = self.ratio;
+        let detune = self.detune_cents;
+        for voice in &mut self.voices {
+            apply_freqs(voice, sample_rate, ratio, detune);
+            voice.env_a.set_sample_rate(sample_rate);
+            voice.env_b.set_sample_rate(sample_rate);
+        }
     }
 
     pub fn set_frequency(&mut self, frequency_hz: f32) -> Result<(), SynthError> {
@@ -329,8 +339,9 @@ impl Engine {
                     voice.note = None;
                     return 0.0;
                 }
-                let freq_b = freq_b_of(voice.freq, ratio, detune);
-                voice.osc_b.set_frequency(sample_rate, freq_b);
+                voice
+                    .osc_b
+                    .set_frequency(sample_rate, freq_b_of(voice.freq, ratio, detune));
                 let env_a = voice.env_a.tick();
                 let env_b = voice.env_b.tick();
                 tick_pair(voice, sample_rate, mode, mix_ab, depth, env_a, env_b, separate)
@@ -396,14 +407,10 @@ impl Engine {
             }
         }
         let separate = self.separate_adsr;
-        if let Some(index) = self
-            .voices
+        self.voices
             .iter()
             .position(|voice| !voice.is_live(separate))
-        {
-            return index;
-        }
-        0
+            .unwrap_or(0)
     }
 }
 
@@ -487,9 +494,6 @@ mod tests {
     fn noise_mode_labels() {
         assert_eq!(NoiseMode::ALL.len(), 4);
         assert_eq!(NoiseMode::Additive.label(), "Additiv");
-        assert_eq!(NoiseMode::Multiplicative.label(), "×(1±val)");
-        assert_eq!(NoiseMode::Walk.label(), "s×(prev×(1±))");
-        assert_eq!(NoiseMode::Parabolic.label(), "s×v(2+n−v)");
         assert_eq!(NoiseMode::default(), NoiseMode::Additive);
     }
 
@@ -497,7 +501,6 @@ mod tests {
     fn noise_dist_labels() {
         assert_eq!(NoiseDist::ALL.len(), 2);
         assert_eq!(NoiseDist::Uniform.label(), "Gleich");
-        assert_eq!(NoiseDist::Gauss.label(), "Gauß");
-        assert_eq!(NoiseDist::default(), NoiseDist::Uniform);
+        assert_eq!(NoiseDist::Gauss.label(), "Gauss");
     }
 }

@@ -3,20 +3,20 @@ use std::time::Duration;
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{FromSample, Sample, SizedSample};
+use zweiton_engine::Engine;
 
-use crate::engine::Engine;
-use crate::error::SynthError;
+use crate::error::HostError;
 
 pub struct AudioOutput {
     _stream: cpal::Stream,
 }
 
 impl AudioOutput {
-    pub fn start(engine: Arc<Mutex<Engine>>) -> Result<Self, SynthError> {
+    pub fn start(engine: Arc<Mutex<Engine>>) -> Result<Self, HostError> {
         let host = cpal::default_host();
         let device = host
             .default_output_device()
-            .ok_or(SynthError::NoOutputDevice)?;
+            .ok_or(HostError::NoOutputDevice)?;
         println!("Ausgabegerät: {device}");
 
         let supported = device.default_output_config()?;
@@ -29,7 +29,7 @@ impl AudioOutput {
             cpal::SampleFormat::I16 => build_stream::<i16>(&device, config, engine)?,
             cpal::SampleFormat::I32 => build_stream::<i32>(&device, config, engine)?,
             cpal::SampleFormat::U16 => build_stream::<u16>(&device, config, engine)?,
-            other => return Err(SynthError::UnsupportedSampleFormat(other)),
+            other => return Err(HostError::UnsupportedSampleFormat(other)),
         };
 
         stream.play()?;
@@ -41,7 +41,7 @@ fn build_stream<T>(
     device: &cpal::Device,
     config: cpal::StreamConfig,
     engine: Arc<Mutex<Engine>>,
-) -> Result<cpal::Stream, SynthError>
+) -> Result<cpal::Stream, HostError>
 where
     T: SizedSample + Sample + FromSample<f32>,
 {
@@ -77,7 +77,7 @@ where
     }
 }
 
-pub fn play_for(engine: Arc<Mutex<Engine>>, gate_s: f32, release_s: f32) -> Result<(), SynthError> {
+pub fn play_for(engine: Arc<Mutex<Engine>>, gate_s: f32, release_s: f32) -> Result<(), HostError> {
     let _output = AudioOutput::start(Arc::clone(&engine))?;
     {
         let mut synth = engine

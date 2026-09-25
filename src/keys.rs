@@ -1,4 +1,5 @@
 use eframe::egui::Key;
+use zweiton_engine::Waveform;
 
 pub const C4_MIDI: i32 = 60;
 
@@ -66,12 +67,12 @@ pub fn midi_for_position(position: Key, octave_shift: i32) -> Option<u8> {
     (0..=127).contains(&midi).then_some(midi as u8)
 }
 
-pub fn waveform_from_function_key(key: Key) -> Option<crate::wave::Waveform> {
+pub fn waveform_from_function_key(key: Key) -> Option<Waveform> {
     match key {
-        Key::F1 => Some(crate::wave::Waveform::Sine),
-        Key::F2 => Some(crate::wave::Waveform::Square),
-        Key::F3 => Some(crate::wave::Waveform::Saw),
-        Key::F4 => Some(crate::wave::Waveform::Triangle),
+        Key::F1 => Some(Waveform::Sine),
+        Key::F2 => Some(Waveform::Square),
+        Key::F3 => Some(Waveform::Saw),
+        Key::F4 => Some(Waveform::Triangle),
         _ => None,
     }
 }

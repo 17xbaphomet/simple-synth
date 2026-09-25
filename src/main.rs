@@ -1,12 +1,7 @@
 mod audio;
-mod engine;
-mod env;
 mod error;
 mod gui;
 mod keys;
-mod note;
-mod osc;
-mod wave;
 mod wav;
 
 use std::str::FromStr;
@@ -16,17 +11,16 @@ use std::time::Duration;
 use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
 
-use crate::engine::{Engine, VoiceConfig};
-use crate::env::AdsrParams;
-use crate::error::SynthError;
-use crate::note::frequency_from_note;
-use crate::wave::Waveform;
+use crate::error::HostError;
+use zweiton_engine::{
+    AdsrParams, Engine, SynthError, VoiceConfig, Waveform, frequency_from_note,
+};
 
 #[derive(Parser, Debug)]
 #[command(
-    name = "simple-synth",
+    name = "zweiton",
     version,
-    about = "Einfacher Synthesizer: Sinus/Rechteck/Saege/Dreieck + ADSR + GUI"
+    about = "Zweiton: Dual-Osc Synthesizer + ADSR + GUI"
 )]
 struct Cli {
     #[command(subcommand)]
@@ -144,7 +138,7 @@ fn play_melody(args: MelodyArgs) -> Result<()> {
 
 fn voice_config(args: &ToneArgs, sample_rate: f32) -> Result<VoiceConfig> {
     if args.duration <= 0.0 {
-        bail!(SynthError::InvalidDuration(args.duration));
+        bail!(HostError::Engine(SynthError::InvalidDuration(args.duration)));
     }
     let frequency_hz = match (&args.note, args.freq) {
         (Some(note), _) => frequency_from_note(note)?,

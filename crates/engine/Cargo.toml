@@ -1,0 +1,11 @@
+[package]
+name = "zweiton-engine"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Zweiton DSP: Dual-Osc, ADSR, Noise-Modi"
+
+[dependencies]
+thiserror = "2.0.20"
