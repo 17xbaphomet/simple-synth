@@ -1,0 +1,15 @@
+[package]
+name = "zweiton"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Zweiton — Dual-Osc VST3/CLAP Instrument"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+
+[dependencies]
+zweiton-engine = { path = "../engine" }
+nice-plug = { version = "0.4.2", default-features = true, features = ["vst3"] }

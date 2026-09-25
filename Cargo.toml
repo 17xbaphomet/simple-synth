@@ -1,16 +1,36 @@
-[package]
-name = "simple-synth"
-version = "0.1.0"
+[workspace]
+resolver = "2"
+members = ["crates/engine", "crates/plugin"]
+
+[workspace.package]
+version = "0.2.0"
 edition = "2021"
-rust-version = "1.95"
-description = "Minimaler subtractiver Synthesizer (2 Osc + Mix/AM/Ring/FM/Sync + ADSR + GUI)"
+rust-version = "1.88"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/17xbaphomet/simple-synth"
 
+[package]
+name = "zweiton-standalone"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Zweiton Standalone: Dual-Osc Synthesizer (CLI + eframe-GUI)"
+
+[[bin]]
+name = "zweiton"
+path = "src/main.rs"
+
 [dependencies]
+zweiton-engine = { path = "crates/engine" }
 anyhow = "1.0.104"
 clap = { version = "4.6.6", features = ["derive"] }
 cpal = "0.18.2"
 eframe = "0.36.2"
 hound = "3.5.1"
 thiserror = "2.0.20"
+
+[profile.release]
+codegen-units = 1
+lto = "thin"
