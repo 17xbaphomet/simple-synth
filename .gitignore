@@ -1,4 +1,6 @@
 /target
+/bundled
+target/bundled
 **/*.rs.bk
 *.wav
 .idea/
