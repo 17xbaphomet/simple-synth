@@ -1,26 +1,33 @@
-# simple-synth
+# Zweiton
 
-Einfacher Synthesizer in Rust — CLI und GUI mit QWERTZ/QWERTY-Klavier.
+Dual-Osc Synthesizer in Rust — Standalone (CLI + GUI) und VST3/CLAP-Instrument.
 
-Signalweg:
+Arbeitsname für Phase 1. Repo bleibt `simple-synth`, Plugin-ID ist `Zweiton`.
 
 ```text
-Note → Osc A + Osc B → Mix|AM|Ring|FM|Sync → ADSR A[/B] → Gain → Noise (+|×1±|s×prev|s×v(2+n−v)) → cpal
+Note → Osc A + Osc B → Mix|AM|Ring|FM|Sync → ADSR A[/B] → Gain → Noise → Host
                                                                               ↘ WAV
 ```
 
 - Zwei Oszillatoren: Mix, AM, Ring, FM, Hard-Sync
 - Wellenformen: `sine`, `square`, `saw`, `triangle`
 - Gemeinsame oder getrennte ADSR-Hüllkurven (Checkbox)
-- Zufallsabweichung: Additiv (`sample + n`), multiplikativ (`sample × (1 + n)`), Walk (`sample × (val_prev × (1 + n))`) oder Parabol (`sample × v(2 + n − v)` = `sample × (2v + vn − v²)`); `n` gleichverteilt in `[-val, +val]` oder gaußverteilt `N(0, val)`
+- Zufallsabweichung: Additiv (`sample + n`), multiplikativ (`sample × (1 + n)`), Walk (`sample × (val_prev × (1 + n))`) oder Parabol (`sample × v(2 + n − v)`); `n` gleichverteilt in `[-val, +val]` oder gaußverteilt `N(0, val)`
 - 8-stimmige Polyphonie
-- Realtime-Ausgabe über [cpal](https://crates.io/crates/cpal) 0.18.2
-- WAV-Export über [hound](https://crates.io/crates/hound)
-- GUI über [eframe](https://crates.io/crates/eframe) 0.36.2
+- Standalone: [cpal](https://crates.io/crates/cpal) + [hound](https://crates.io/crates/hound) + [eframe](https://crates.io/crates/eframe)
+- Plugin: [nice-plug](https://crates.io/crates/nice-plug) 0.4 — VST3 + CLAP, kein Mutex/Alloc auf dem Audio-Thread
+
+## Workspace
+
+```text
+crates/engine   zweiton-engine      DSP (kein cpal, kein eframe)
+crates/plugin   zweiton             VST3 + CLAP
+src/            zweiton-standalone  CLI + eframe-GUI
+```
 
 ## Voraussetzungen
 
-- Rust 1.95+
+- Rust 1.88+
 
 Arch Linux:
 
@@ -36,18 +43,42 @@ sudo apt install libasound2-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfix
 
 Lautstärke vor dem ersten Start runterdrehen.
 
-## Start
+## Standalone
 
 ```bash
 git clone https://github.com/17xbaphomet/simple-synth.git
 cd simple-synth
-git checkout feature/dual-osc
+git checkout feature/vst3
 
-cargo run --release -- gui
-cargo run --release -- play --note C4 --wave square --duration 1.2
-cargo run --release -- wav --note E3 --wave triangle --duration 2 --out bass.wav
-cargo run --release -- melody --wave square
+cargo run --release --bin zweiton -- gui
+cargo run --release --bin zweiton -- play --note C4 --wave square --duration 1.2
+cargo run --release --bin zweiton -- wav --note E3 --wave triangle --duration 2 --out bass.wav
+cargo run --release --bin zweiton -- melody --wave square
 ```
+
+## Plugin (VST3 / CLAP) — Phase 1
+
+Ableton Live 12 lädt **VST3 64-bit**. Phase 1 nutzt die Generic-Parameter-UI des Hosts (noch kein eigenes In-Host-Editor-Fenster).
+
+Win + Mac from day 1. MIDI vom Host, Stereo-Ausgang. Parameter sind automatisierbar und werden mit dem Liveset gespeichert.
+
+```bash
+cargo install cargo-nice-plug
+cargo nice-plug bundle -p zweiton --release
+```
+
+Artefakt unter `target/bundled/zweiton.vst3` bzw. `zweiton.clap`.
+
+Kopieren:
+
+- Windows VST3: `C:\Program Files\Common Files\VST3\Zweiton.vst3`
+- Windows CLAP: `C:\Program Files\Common Files\CLAP\`
+- macOS VST3: `~/Library/Audio/Plug-Ins/VST3/Zweiton.vst3`
+- macOS CLAP: `~/Library/Audio/Plug-Ins/CLAP/`
+
+Danach in Live: Preferences → Plug-ins → VST3 system folder an → Rescan.
+
+Signierte Installer und In-Host-egui sind **nicht** Teil von Phase 1.
 
 ## GUI
 
@@ -95,11 +126,11 @@ CLI bleibt unverändert: Default ist Mix mit Mix=0 (nur Osc A).
 ## CLI
 
 ```text
-simple-synth gui
-simple-synth play [--freq 440 | --note A4] [--wave sine] [--duration 1.5]
-                 [--gain 0.2] [--attack 0.01] [--decay 0.1] [--sustain 0.7] [--release 0.2]
-simple-synth wav  … --out tone.wav
-simple-synth melody [--wave square]
+zweiton gui
+zweiton play [--freq 440 | --note A4] [--wave sine] [--duration 1.5]
+             [--gain 0.2] [--attack 0.01] [--decay 0.1] [--sustain 0.7] [--release 0.2]
+zweiton wav  … --out tone.wav
+zweiton melody [--wave square]
 ```
 
 Noten: `A4`, `C#5`, `Bb3`, `H4` (deutsches H = englisches B).
@@ -109,16 +140,17 @@ Wellenform-Aliase: `sin`/`sinus`, `sqr`/`rechteck`, `saege`/`säge`, `tri`/`drei
 ## Projektstruktur
 
 ```text
+crates/engine/src/   DSP: wave, osc, env, note, engine
+crates/plugin/src/   nice-plug VST3 + CLAP Wrapper
 src/
-  main.rs      CLI (play / wav / melody / gui)
-  gui.rs       eframe-Fenster, Dual-Osc, Sliders, On-Screen-Klavier
-  keys.rs      QWERTZ/QWERTY → MIDI
-  wave.rs      Sine / Square / Saw / Triangle
-  osc.rs       Phasenakkumulator + OscInteract
-  env.rs       ADSR
-  note.rs      Notenname → Frequenz
-  engine.rs    8 Stimmen: OscA/OscB * Mode * Env * Gain * Noise
-  audio.rs     cpal-Realtime-Ausgabe
-  wav.rs       WAV-Export
-  error.rs     Domain-Fehler
+  main.rs            CLI (play / wav / melody / gui)
+  gui.rs             eframe-Fenster, Dual-Osc, Sliders, On-Screen-Klavier
+  keys.rs            QWERTZ/QWERTY → MIDI
+  audio.rs           cpal-Realtime-Ausgabe
+  wav.rs             WAV-Export
+  error.rs           HostError (cpal + hound + SynthError)
 ```
+
+## Lizenz
+
+MIT OR Apache-2.0. Engine-Snapshot auf GitHub bleibt öffentlich. Plugin-Wrapper kann später proprietär werden.
