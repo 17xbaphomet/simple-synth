@@ -1,7 +1,8 @@
 use std::path::Path;
 
-use crate::engine::Engine;
-use crate::error::SynthError;
+use zweiton_engine::Engine;
+
+use crate::error::HostError;
 
 const WAV_SAMPLE_RATE: u32 = 44_100;
 
@@ -10,7 +11,7 @@ pub fn write_tone(
     path: impl AsRef<Path>,
     gate_s: f32,
     release_s: f32,
-) -> Result<(), SynthError> {
+) -> Result<(), HostError> {
     let spec = hound::WavSpec {
         channels: 1,
         sample_rate: WAV_SAMPLE_RATE,
